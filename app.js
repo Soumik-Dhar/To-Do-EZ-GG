@@ -1,5 +1,6 @@
 const express = require("express");
 const bodyParser = require("body-parser");
+const date = require(__dirname + "/date.js");
 
 const app = express();
 
@@ -12,34 +13,56 @@ app.use(bodyParser.urlencoded({
 
 const PORT = (process.env.PORT || 3000);
 
-let tasks = ["Task 1", "Task 2"];
+let tasks = ["Task 1", "Task 2", "Task 3"];
+let work = [];
 
 app.get("/", function(req, res) {
-  const options = {
-    weekday: "long",
-    month: "long",
-    day: "numeric"
-  }
-  let day = new Date().toLocaleDateString("en-US", options);
 
   res.render("todo", {
-    dayOfTheWeek: day,
-    newTasks: tasks
+    listTitle: date.getDate(),
+    newTasks: tasks,
+    flag: "daily"
   });
 });
 
+app.get("/work", function(req, res) {
+  res.render("todo", {
+    listTitle: "Work List",
+    newTasks: work,
+    flag: "work"
+  });
+});
+
+app.get("/test", function(req, res){
+  res.render("try");
+});
+
 app.post("/", function(req, res) {
-  let task = req.body.item;
-  if(req.body.del) {
-    if(tasks.length>0)
-      tasks.pop();
+  const formData = req.body;
+  const task = formData.item;
+
+  if (formData.add === "work") {
+    if (!task)
+      return;
+    work.push(task);
+    res.redirect("/work");
   }
-  else {
-    if(!task)
+  else if(formData.add === "daily") {
+    if (!task)
       return;
     tasks.push(task);
+    res.redirect("/");
   }
-  res.redirect("/");
+  else if(formData.del === "work") {
+    if(work.length>0)
+      work.pop();
+    res.redirect("/work");
+  }
+  else {
+    if(tasks.length>0)
+      tasks.pop();
+    res.redirect("/");
+  }
 });
 
 app.listen(PORT, function() {

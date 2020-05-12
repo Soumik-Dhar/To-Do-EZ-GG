@@ -59,7 +59,7 @@ form {
   margin-left: 20px;
 }
 
-.add {
+button {
   min-height: 50px;
   width: 50px;
   border-radius: 50%;
@@ -69,16 +69,6 @@ form {
   font-size: 30px;
   padding-bottom: 2px;
   border-width: 0;
-}
-
-button {
-  min-height: 50px;
-  width: 50px;
-  border-radius: 50%;
-  border-color: transparent;
-  padding-bottom: 2px;
-  border-width: 0;
-  margin-left: 8rem;
 }
 
 input[type="text"] {
