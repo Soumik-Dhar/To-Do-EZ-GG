@@ -1,19 +1,28 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-// const date = require(__dirname + "/date.js");
+const startCase = require("lodash.startcase");
+const date = require(__dirname + "/date.js");
+// managing environment variables for production and development cases
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config({
+    silent: true
+  });
+}
 
 const app = express();
 
 app.set("view engine", "ejs");
-
 app.use(express.static("public"));
 app.use(bodyParser.urlencoded({
   extended: true
 }));
 
 const PORT = (process.env.PORT || 3000);
-const URL = "mongodb://localhost:27017/todoDB";
+
+const USERNAME = process.env.ATLAS_ADMIN_USERNAME;
+const PASSWORD = process.env.ATLAS_ADMIN_PASSWORD;
+const URL = "mongodb+srv://" + USERNAME + ":" + PASSWORD + "@cluster0-2akbx.mongodb.net/todoDB?retryWrites=true&w=majority";
 
 mongoose.connect(URL, {
   useNewUrlParser: true,
@@ -25,6 +34,12 @@ const taskSchema = {
 };
 const Task = mongoose.model("Task", taskSchema);
 
+const listSchema = {
+  name: String,
+  tasks: [taskSchema]
+};
+const List = mongoose.model("List", listSchema);
+
 const task = {
   task1: new Task({
     name: "Welcome to your ToDo list!"
@@ -33,75 +48,134 @@ const task = {
     name: "Press the + button to add a task"
   }),
   task3: new Task({
-    name: "Press here --> to delete a task"
+    name: "<-- Press here to delete a task"
   })
 };
 
 const defaultTasks = [task.task1, task.task2, task.task3];
 
+function reroute(err, docs, route, res) {
+  if (!err) {
+    if (docs) {
+      res.redirect(route);
+    }
+  }
+}
+
+let visited = false;
+
 app.get("/", function(req, res) {
 
   Task.find(function(err, tasks) {
-    if (err) {
-      console.log("Error in finding tasks : " + err);
-    } else if (tasks.length === 0) {
-      Task.insertMany(defaultTasks, function(err) {
-        if (err) {
-          console.log("Error in adding tasks : " + err);
-        } else {
-          console.log("Successfully added default tasks to list");
-        }
-      });
-      res.redirect("/");
-    } else {
-      res.render("todo", {
-        listTitle: "Today's List", //date.getDate(),
-        newTasks: tasks,
-        list: "daily"
-      });
+    if (!err) {
+      if (tasks.length === 0 && visited === false) {
+        visited = true;
+        Task.insertMany(defaultTasks, function(err, docs) {
+          const route = "/";
+          reroute(err, docs, route, res);
+        });
+      } else {
+        res.render("todo", {
+          listTitle: date.getDate(),
+          newTasks: tasks
+        });
+      }
     }
   });
 });
 
-app.get("/work", function(req, res) {
-  res.render("todo", {
-    listTitle: "Work List",
-    newTasks: work,
-    list: "work"
+app.get("/lists/:listRoute", function(req, res) {
+  //
+  const listRoute = startCase(req.params.listRoute.toLowerCase());
+
+  List.findOne({
+    name: listRoute
+  }, function(err, listItem) {
+    if (!err) {
+      if (!listItem) {
+        const list = new List({
+          name: listRoute,
+          tasks: defaultTasks
+        });
+        list.save(function(err, docs) {
+          const route = "/lists/" + listRoute;
+          reroute(err, docs, route, res);
+        });
+      } else {
+        res.render("todo", {
+          listTitle: listItem.name,
+          newTasks: listItem.tasks
+        });
+      }
+    }
   });
 });
 
 app.post("/", function(req, res) {
   const formData = req.body;
-  const item = formData.item;
-  // if (formData.add === "work") {
-  //   if (!task)
-  //     return;
-  //   work.push(task);
-  //   res.redirect("/work");
-  // } else {
+  const item = formData.addItem;
+  const listName = formData.listName;
+
+  let flag = 0;
+  // checking if entered task is an empty string
   if (!item)
-    return;
-  const task = new Task({
-    name: item
-  });
-  task.save();
-  res.redirect("/");
-  // }
+    flag++;
+  // inserting task into database if it is not an empty string
+  if (!flag) {
+    const task = new Task({
+      name: item
+    });
+    if (listName === date.getDate()) {
+      task.save(function(err, docs) {
+        const route = "/";
+        reroute(err, docs, route, res);
+      });
+    } else {
+      List.findOne({
+        name: listName
+      }, function(err, listItem) {
+        if (!err) {
+          listItem.tasks.push(task);
+          listItem.save(function(err, docs) {
+            const route = "/lists/" + listName;
+            reroute(err, docs, route, res);
+          });
+        }
+      });
+    }
+  }
 });
 
 app.post("/delete", function(req, res) {
-  const item = req.body.item;
-  Task.findByIdAndDelete(item, function(err) {
-    if (err) {
-      console.log("Error in deleting tasks : " + err);
-    } else {
-      console.log("Successfully deleted tasks from the list");
-    }
-  });
-  setTimeout(function() {
-    res.redirect("/");
-  }, 1000);
+  const formData = req.body;
+  const itemId = formData.deleteItem;
+  const listName = formData.listName;
+
+  if (listName === date.getDate()) {
+    Task.findByIdAndDelete(itemId, function(err, docs) {
+      setTimeout(function() {
+        const route = "/";
+        reroute(err, docs, route, res);
+      }, 500);
+    });
+  } else {
+    List.findOneAndUpdate({
+      name: listName
+    }, {
+      $pull: {
+        tasks: {
+          _id: itemId
+        }
+      }
+    }, {
+      useFindAndModify: false
+    }, function(err, docs) {
+      setTimeout(function() {
+        const route = "/lists/" + listName;
+        reroute(err, docs, route, res);
+      }, 500);
+    });
+  }
 });
 
 app.listen(PORT, function() {
